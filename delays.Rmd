@@ -1,0 +1,170 @@
+---
+title: "Analysis of flight delays"
+author: "Michał Szuszert"
+date: "22.04.2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(RODBC)
+library(DBI)
+library(odbc)
+con <- DBI::dbConnect(odbc::odbc(),
+                      Driver = 'SQL Server',
+                      Server = 'mssql-2017.labs.wmi.amu.edu.pl',
+                      Database = 'dbad_flights',
+                      uid = rstudioapi::askForPassword("Database uid"),
+                      pwd = rstudioapi::askForPassword("Database pwd"),
+                      Port = 1433)
+```
+## Task 1
+```{sql connection=con}
+SELECT AVG(arr_delay_new) AS [avg_delay]
+FROM Flight_delays
+```
+## Task 2
+```{sql connection=con}
+SELECT MAX(arr_delay_new) AS [avg_delay] 
+FROM Flight_delays
+```
+## Task 3
+```{sql connection=con}
+SELECT arr_delay_new,
+        fl_date,
+        carrier,
+        origin_city_name,
+        dest_city_name
+FROM Flight_delays
+WHERE arr_delay_new = (SELECT MAX(arr_delay_new)
+                       FROM Flight_delays)
+```
+## Task 4
+```{sql connection=con}
+SELECT AVG(F.arr_delay_new) AS [avg_delay],
+        W.weekday_name
+ FROM Weekdays W
+ JOIN Flight_delays F
+    ON W.weekday_id = F.day_of_week
+ GROUP BY F.day_of_week,W.weekday_name
+ ORDER BY AVG(F.arr_delay_new) DESC
+```
+## Task 5
+```{sql connection=con}
+SELECT AVG(F.arr_delay_new) as [avg_delay],
+        A.airline_name
+FROM Airlines A
+JOIN Flight_delays F
+    ON A.airline_id = F.airline_id AND A.airline_id IN(SELECT F.airline_id
+                                                       FROM Flight_delays F
+                                                       WHERE F.origin = 'SFO')
+GROUP BY F.airline_id,A.airline_name
+ORDER BY AVG(F.arr_delay_new) DESC
+```
+## Task 6
+```{sql connection=con}
+WITH A
+AS
+(
+    SELECT airline_id
+    FROM Flight_delays
+    GROUP BY airline_id
+    HAVING AVG(arr_delay_new) > 10
+),
+B AS
+(
+    SELECT airline_id
+    FROM Flight_delays
+    GROUP BY airline_id
+),
+    CA AS
+(  
+    SELECT COUNT(*) * 1.00 AS [LA] 
+    FROM A
+),
+CB AS
+(
+    SELECT COUNT(*) * 1.00 AS [LB] 
+    FROM B
+)
+SELECT LA/LB AS [late_proportion]
+FROM CA,CB
+```
+## Task 7
+```{sql connection=con}
+SELECT (AVG(dep_delay_new * arr_delay_new)
+        - (AVG(dep_delay_new) * AVG(arr_delay_new)))
+        / (StDevP(dep_delay_new) * StDevP(arr_delay_new)) AS [Pearsons r]
+FROM Flight_delays
+```
+## Task 8
+```{sql connection=con}
+WITH A
+AS
+(
+SELECT AVG(D.arr_delay_new) as [delay_increase],
+       A.airline_name
+FROM Airlines A
+JOIN Flight_delays D
+    ON A.airline_id = D.airline_id
+WHERE D.day_of_month BETWEEN 1 AND 23
+GROUP BY A.airline_name
+),
+B AS
+(
+SELECT AVG(D.arr_delay_new) as [delay_increase],
+       A.airline_name
+FROM Airlines A
+JOIN Flight_delays D
+    ON A.airline_id = D.airline_id
+WHERE D.day_of_month BETWEEN 24 AND 31
+GROUP BY A.airline_name
+)
+SELECT B.delay_increase - A.delay_increase AS [delay_increase],
+       A.airline_name
+FROM A,B
+WHERE A.delay_increase - B.delay_increase = (SELECT MIN(A.delay_increase 
+                                                        - B.delay_increase)
+                                             FROM A
+                                             JOIN B 
+                                             ON A.airline_name 
+                                                = B.airline_name)
+```
+## Task 9
+```{sql connection=con}
+WITH A
+AS
+(
+SELECT DISTINCT A.airline_name
+FROM Airlines A
+JOIN Flight_delays F
+    ON A.airline_id = F.airline_id
+WHERE F.origin = 'SFO' AND F.dest = 'PDX'
+),
+B AS
+(
+SELECT DISTINCT A.airline_name
+FROM Airlines A
+JOIN Flight_delays F
+    ON A.airline_id = F.airline_id
+WHERE F.origin = 'SFO' AND F.dest = 'EUG'
+)
+SELECT A.airline_name
+FROM A
+JOIN B  
+    ON A.airline_name = B.airline_name
+ORDER BY A.airline_name
+```
+## Task 10
+```{sql connection=con}
+SELECT cast(AVG(arr_delay_new) AS decimal(20,13)) AS [avg_delay],
+       origin,
+       dest
+FROM Flight_delays
+WHERE origin IN('MDW','ORD') AND dest IN('SFO','SJC','OAK') 
+    AND crs_dep_time > 1400
+GROUP BY origin,dest
+ORDER BY AVG(arr_delay_new) DESC;
+```
+
+
